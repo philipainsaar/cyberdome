@@ -208,10 +208,9 @@ function BackgroundFX() {
     <div className="backgroundFxLayer" aria-hidden="true">
       <Canvas
         camera={{ position: [0, 0, 8], fov: 50 }}
-        gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
+        gl={{ antialias: true, alpha: true, powerPreference: 'high-performance', premultipliedAlpha: false }}
         dpr={[1, 1.5]}
       >
-        <color attach="background" args={['#000000']} />
         <fog attach="fog" args={['#000000', 6, 13]} />
         <SparkleParticles />
         <NeonFloorGrid />
