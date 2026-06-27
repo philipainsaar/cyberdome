@@ -1,0 +1,381 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { ContactShadows, Environment } from '@react-three/drei';
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
+
+function wrapIndex(index, total) {
+  if (!total) return 0;
+  return ((index % total) + total) % total;
+}
+
+function disposeObject(root) {
+  root?.traverse?.((child) => {
+    if (!child.isMesh) return;
+    child.geometry?.dispose?.();
+
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    materials.forEach((material) => {
+      if (!material) return;
+      Object.values(material).forEach((value) => {
+        if (value?.isTexture) value.dispose();
+      });
+      material.dispose?.();
+    });
+  });
+}
+
+function fitModelToStage(root) {
+  root.updateMatrixWorld(true);
+
+  const originalBox = new THREE.Box3().setFromObject(root);
+  const originalSize = new THREE.Vector3();
+  originalBox.getSize(originalSize);
+
+  const maxAxis = Math.max(originalSize.x, originalSize.y, originalSize.z) || 1;
+  const targetSize = 2.82;
+  const scale = targetSize / maxAxis;
+  root.scale.setScalar(scale);
+
+  root.updateMatrixWorld(true);
+  const fittedBox = new THREE.Box3().setFromObject(root);
+  const fittedCenter = new THREE.Vector3();
+  fittedBox.getCenter(fittedCenter);
+
+  root.position.x -= fittedCenter.x;
+  root.position.z -= fittedCenter.z;
+  root.position.y += -1.32 - fittedBox.min.y;
+}
+
+function GLBModel({ url, rotationY, onStatusChange }) {
+  const groupRef = useRef(null);
+  const mixerRef = useRef(null);
+  const [object, setObject] = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    let loadedRoot = null;
+    let objectUrl = url;
+    const loader = new GLTFLoader();
+
+    setObject(null);
+    mixerRef.current = null;
+    onStatusChange?.({ type: 'loading', url });
+
+    loader.load(
+      objectUrl,
+      (gltf) => {
+        if (!alive) return;
+
+        const root = cloneSkeleton(gltf.scene);
+        loadedRoot = root;
+
+        root.traverse((child) => {
+          if (!child.isMesh) return;
+
+          child.castShadow = true;
+          child.receiveShadow = true;
+          child.frustumCulled = false;
+
+          const materials = Array.isArray(child.material) ? child.material : [child.material];
+          materials.forEach((material) => {
+            if (!material) return;
+            material.side = THREE.DoubleSide;
+            material.needsUpdate = true;
+          });
+        });
+
+        fitModelToStage(root);
+
+        if (gltf.animations?.length) {
+          const mixer = new THREE.AnimationMixer(root);
+          gltf.animations.forEach((clip) => {
+            mixer.clipAction(clip).play();
+          });
+          mixerRef.current = mixer;
+        }
+
+        setObject(root);
+        onStatusChange?.({ type: 'ready', url });
+      },
+      undefined,
+      (error) => {
+        if (!alive) return;
+        onStatusChange?.({
+          type: 'error',
+          url,
+          message: error?.message || `Could not load ${url}`
+        });
+      }
+    );
+
+    return () => {
+      alive = false;
+      mixerRef.current?.stopAllAction?.();
+      mixerRef.current = null;
+      disposeObject(loadedRoot);
+    };
+  }, [url, onStatusChange]);
+
+  useFrame((_, delta) => {
+    mixerRef.current?.update(delta);
+
+    if (!groupRef.current) return;
+    groupRef.current.rotation.y = THREE.MathUtils.lerp(groupRef.current.rotation.y, rotationY, 0.18);
+  });
+
+  if (!object) return null;
+
+  return (
+    <group ref={groupRef} position={[0, 0, 0]}>
+      <primitive object={object} />
+    </group>
+  );
+}
+
+function OutfitScene({ outfit, rotationY, onStatusChange }) {
+  return (
+    <Canvas
+      shadows
+      camera={{ position: [0, 0.46, 5.35], fov: 37 }}
+      gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
+      dpr={[1, 1.75]}
+    >
+      <ambientLight intensity={1.55} />
+      <directionalLight position={[3.5, 5.5, 4.5]} intensity={2.65} castShadow />
+      <directionalLight position={[-4.5, 2.4, -3.8]} intensity={1.1} />
+      <directionalLight position={[0, 1.5, 4]} intensity={0.65} />
+
+      <GLBModel
+        key={outfit.file}
+        url={outfit.file}
+        rotationY={rotationY}
+        onStatusChange={onStatusChange}
+      />
+
+      <ContactShadows position={[0, -1.32, 0]} opacity={0.34} scale={4.8} blur={2.9} far={2.7} />
+      <Environment preset="city" />
+    </Canvas>
+  );
+}
+
+export default function OutfitSelect() {
+  const [outfits, setOutfits] = useState([]);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [listStatus, setListStatus] = useState('loading');
+  const [modelStatus, setModelStatus] = useState({ type: 'idle' });
+  const [rotationY, setRotationY] = useState(0);
+
+  const pointerRef = useRef(null);
+  const trackRef = useRef(null);
+  const activeOutfit = outfits[activeIndex];
+
+  const selectOutfit = useCallback(
+    (index) => {
+      if (!outfits.length) return;
+      setActiveIndex(wrapIndex(index, outfits.length));
+      setRotationY(0);
+    },
+    [outfits.length]
+  );
+
+  const next = useCallback(() => selectOutfit(activeIndex + 1), [activeIndex, selectOutfit]);
+  const previous = useCallback(() => selectOutfit(activeIndex - 1), [activeIndex, selectOutfit]);
+
+  const countText = useMemo(() => {
+    if (!outfits.length) return '00 / 00';
+    return `${String(activeIndex + 1).padStart(2, '0')} / ${String(outfits.length).padStart(2, '0')}`;
+  }, [activeIndex, outfits.length]);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function loadOutfitList() {
+      try {
+        setListStatus('loading');
+        const response = await fetch('/api/outfits', { cache: 'no-store' });
+        const data = await response.json();
+
+        if (!alive) return;
+
+        const glbOutfits = Array.isArray(data.outfits) ? data.outfits : [];
+        setOutfits(glbOutfits);
+        setActiveIndex(0);
+        setRotationY(0);
+        setListStatus(glbOutfits.length ? 'ready' : 'empty');
+      } catch (error) {
+        if (!alive) return;
+        setOutfits([]);
+        setListStatus('error');
+      }
+    }
+
+    loadOutfitList();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (!outfits.length) return;
+      if (event.key === 'ArrowRight') next();
+      if (event.key === 'ArrowLeft') previous();
+      if (event.key.toLowerCase() === 'a') setRotationY((value) => value - 0.35);
+      if (event.key.toLowerCase() === 'd') setRotationY((value) => value + 0.35);
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [next, outfits.length, previous]);
+
+  useEffect(() => {
+    const track = trackRef.current;
+    const card = track?.querySelector(`[data-card-index="${activeIndex}"]`);
+    card?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }, [activeIndex]);
+
+  const handlePointerDown = (event) => {
+    if (!outfits.length) return;
+
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    pointerRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      lastX: event.clientX,
+      startedAt: performance.now(),
+      moved: false
+    };
+  };
+
+  const handlePointerMove = (event) => {
+    const pointer = pointerRef.current;
+    if (!pointer || pointer.pointerId !== event.pointerId) return;
+
+    const dx = event.clientX - pointer.lastX;
+    const totalX = event.clientX - pointer.startX;
+    const totalY = event.clientY - pointer.startY;
+
+    pointer.lastX = event.clientX;
+    pointer.moved = Math.abs(totalX) > 4 || Math.abs(totalY) > 4;
+
+    if (Math.abs(totalX) > Math.abs(totalY) || pointer.moved) {
+      event.preventDefault();
+      setRotationY((value) => value + dx * 0.012);
+    }
+  };
+
+  const handlePointerUp = (event) => {
+    const pointer = pointerRef.current;
+    if (!pointer || pointer.pointerId !== event.pointerId) return;
+
+    const totalX = event.clientX - pointer.startX;
+    const totalY = event.clientY - pointer.startY;
+    const elapsed = performance.now() - pointer.startedAt;
+    const swipeDistance = Math.max(118, window.innerWidth * 0.32);
+    const isFastEnough = elapsed < 900;
+    const isHorizontal = Math.abs(totalX) > Math.abs(totalY) * 1.35;
+    const isChangeSwipe = Math.abs(totalX) > swipeDistance && isFastEnough && isHorizontal;
+
+    pointerRef.current = null;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+
+    if (!isChangeSwipe) return;
+    if (totalX < 0) next();
+    else previous();
+  };
+
+  const statusText = useMemo(() => {
+    if (listStatus === 'loading') return 'Scanning public/outfits for .glb files...';
+    if (listStatus === 'empty') return 'No .glb outfits found. Add files to public/outfits and refresh.';
+    if (listStatus === 'error') return 'Could not read the outfit list.';
+    if (modelStatus.type === 'loading') return 'Loading GLB outfit...';
+    if (modelStatus.type === 'error') return 'This GLB could not load. Check the filename or export settings.';
+    return 'Drag to rotate. Swipe far left/right to change outfit.';
+  }, [listStatus, modelStatus.type]);
+
+  return (
+    <main className="outfitPage">
+      <section className="selectorShell">
+        <div className="sparkleGrid" />
+        <div className="glowBlob glowOne" />
+        <div className="glowBlob glowTwo" />
+
+        <header className="topHud">
+          <p className="eyebrow">GLB Outfit Select</p>
+          <h1>{activeOutfit?.name || 'Add GLB Outfits'}</h1>
+          <span>{countText}</span>
+        </header>
+
+        <div className="helpPill">{statusText}</div>
+
+        <div
+          className="viewerFrame"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={() => {
+            pointerRef.current = null;
+          }}
+        >
+          <button
+            className="arrowButton left"
+            aria-label="Previous outfit"
+            onClick={previous}
+            disabled={!outfits.length}
+          >
+            ‹
+          </button>
+
+          {activeOutfit ? (
+            <OutfitScene
+              outfit={activeOutfit}
+              rotationY={rotationY}
+              onStatusChange={setModelStatus}
+            />
+          ) : (
+            <div className="emptyStage">
+              <strong>.glb only</strong>
+              <span>Drop your files into public/outfits</span>
+            </div>
+          )}
+
+          <button
+            className="arrowButton right"
+            aria-label="Next outfit"
+            onClick={next}
+            disabled={!outfits.length}
+          >
+            ›
+          </button>
+        </div>
+
+        <nav className="outfitTrack" ref={trackRef} aria-label="GLB outfit list">
+          {outfits.length ? (
+            outfits.map((outfit, index) => (
+              <button
+                key={outfit.file}
+                data-card-index={index}
+                className={`outfitCard ${index === activeIndex ? 'active' : ''}`}
+                onClick={() => selectOutfit(index)}
+              >
+                <span className="cardNumber">{String(index + 1).padStart(2, '0')}</span>
+                <span className="cardName">{outfit.name}</span>
+                <span className="cardType">GLB</span>
+              </button>
+            ))
+          ) : (
+            <div className="emptyCards">
+              Add files named like <strong>outfit-01.glb</strong>, <strong>outfit-02.glb</strong>, then refresh.
+            </div>
+          )}
+        </nav>
+      </section>
+    </main>
+  );
+}
