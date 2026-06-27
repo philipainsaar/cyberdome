@@ -66,8 +66,8 @@ button {
   height: 100%;
   object-fit: cover;
   display: block;
-  opacity: 0.38;
-  filter: saturate(0.85) contrast(1.05) brightness(0.52);
+  opacity: 0.72;
+  filter: saturate(1.12) contrast(1.08) brightness(0.82);
 }
 
 .backgroundFxLayer {
@@ -75,11 +75,15 @@ button {
   opacity: 0.92;
 }
 
+.backgroundFxLayer canvas {
+  background: transparent !important;
+}
+
 .screenShade {
   z-index: 2;
   background:
     radial-gradient(circle at 50% 40%, rgba(0, 0, 0, 0.12), transparent 32%),
-    linear-gradient(180deg, rgba(0, 0, 0, 0.32) 0%, rgba(0, 0, 0, 0.18) 28%, rgba(0, 0, 0, 0.4) 100%);
+    linear-gradient(180deg, rgba(0, 0, 0, 0.22) 0%, rgba(0, 0, 0, 0.10) 28%, rgba(0, 0, 0, 0.32) 100%);
 }
 
 .topHud {
