@@ -50,6 +50,176 @@ function fitModelToStage(root) {
   root.position.y += -1.32 - fittedBox.min.y;
 }
 
+function BackgroundMedia() {
+  const [mode, setMode] = useState('video');
+
+  return (
+    <div className="backgroundMediaLayer" aria-hidden="true">
+      {mode === 'video' ? (
+        <video
+          className="backgroundMedia"
+          src="/backgrounds/background.mp4"
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="auto"
+          onError={() => setMode('image')}
+        />
+      ) : null}
+
+      {mode === 'image' ? (
+        <img
+          className="backgroundMedia"
+          src="/backgrounds/background.jpg"
+          alt=""
+          onError={() => setMode('none')}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function SparkleParticles() {
+  const brightRef = useRef(null);
+  const dustRef = useRef(null);
+
+  const brightPositions = useMemo(() => {
+    const count = 320;
+    const array = new Float32Array(count * 3);
+
+    for (let index = 0; index < count; index += 1) {
+      const stride = index * 3;
+      array[stride] = (Math.random() - 0.5) * 13.5;
+      array[stride + 1] = (Math.random() - 0.5) * 15.5;
+      array[stride + 2] = (Math.random() - 0.5) * 8.5;
+    }
+
+    return array;
+  }, []);
+
+  const dustPositions = useMemo(() => {
+    const count = 520;
+    const array = new Float32Array(count * 3);
+
+    for (let index = 0; index < count; index += 1) {
+      const stride = index * 3;
+      array[stride] = (Math.random() - 0.5) * 16;
+      array[stride + 1] = (Math.random() - 0.5) * 18;
+      array[stride + 2] = (Math.random() - 0.5) * 11;
+    }
+
+    return array;
+  }, []);
+
+  useFrame((state) => {
+    const time = state.clock.elapsedTime;
+
+    if (brightRef.current) {
+      brightRef.current.rotation.y = time * 0.035;
+      brightRef.current.rotation.x = Math.sin(time * 0.14) * 0.035;
+      brightRef.current.position.y = Math.sin(time * 0.32) * 0.1;
+      brightRef.current.material.opacity = 0.72 + Math.sin(time * 1.8) * 0.22;
+    }
+
+    if (dustRef.current) {
+      dustRef.current.rotation.y = -time * 0.022;
+      dustRef.current.rotation.z = Math.sin(time * 0.08) * 0.025;
+      dustRef.current.position.y = Math.cos(time * 0.22) * 0.08;
+      dustRef.current.material.opacity = 0.28 + Math.sin(time * 1.15) * 0.08;
+    }
+  });
+
+  return (
+    <>
+      <points ref={dustRef}>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            count={dustPositions.length / 3}
+            array={dustPositions}
+            itemSize={3}
+          />
+        </bufferGeometry>
+        <pointsMaterial
+          color="#2dff4d"
+          size={0.045}
+          sizeAttenuation
+          transparent
+          opacity={0.34}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </points>
+
+      <points ref={brightRef}>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            count={brightPositions.length / 3}
+            array={brightPositions}
+            itemSize={3}
+          />
+        </bufferGeometry>
+        <pointsMaterial
+          color="#a8ff7d"
+          size={0.115}
+          sizeAttenuation
+          transparent
+          opacity={0.9}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </points>
+    </>
+  );
+}
+
+function NeonFloorGrid() {
+  const gridRef = useRef(null);
+
+  useFrame((state) => {
+    if (!gridRef.current) return;
+
+    const opacity = 0.18 + Math.sin(state.clock.elapsedTime * 0.9) * 0.045;
+    const materials = Array.isArray(gridRef.current.material)
+      ? gridRef.current.material
+      : [gridRef.current.material];
+
+    materials.forEach((material) => {
+      if (!material) return;
+      material.transparent = true;
+      material.opacity = opacity;
+    });
+
+    gridRef.current.position.z = (state.clock.elapsedTime * 0.42) % 1;
+  });
+
+  return (
+    <gridHelper
+      ref={gridRef}
+      args={[18, 36, '#54ff39', '#143d12']}
+      position={[0, -3.05, -1.2]}
+    />
+  );
+}
+function BackgroundFX() {
+  return (
+    <div className="backgroundFxLayer" aria-hidden="true">
+      <Canvas
+        camera={{ position: [0, 0, 8], fov: 50 }}
+        gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
+        dpr={[1, 1.5]}
+      >
+        <color attach="background" args={['#000000']} />
+        <fog attach="fog" args={['#000000', 6, 13]} />
+        <SparkleParticles />
+        <NeonFloorGrid />
+      </Canvas>
+    </div>
+  );
+}
+
 function GLBModel({ url, rotationY, onStatusChange }) {
   const groupRef = useRef(null);
   const mixerRef = useRef(null);
@@ -58,7 +228,6 @@ function GLBModel({ url, rotationY, onStatusChange }) {
   useEffect(() => {
     let alive = true;
     let loadedRoot = null;
-    let objectUrl = url;
     const loader = new GLTFLoader();
 
     setObject(null);
@@ -66,7 +235,7 @@ function GLBModel({ url, rotationY, onStatusChange }) {
     onStatusChange?.({ type: 'loading', url });
 
     loader.load(
-      objectUrl,
+      url,
       (gltf) => {
         if (!alive) return;
 
@@ -144,10 +313,12 @@ function OutfitScene({ outfit, rotationY, onStatusChange }) {
       gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
       dpr={[1, 1.75]}
     >
-      <ambientLight intensity={1.55} />
-      <directionalLight position={[3.5, 5.5, 4.5]} intensity={2.65} castShadow />
-      <directionalLight position={[-4.5, 2.4, -3.8]} intensity={1.1} />
-      <directionalLight position={[0, 1.5, 4]} intensity={0.65} />
+      <ambientLight intensity={0.65} />
+      <directionalLight position={[3.5, 5.5, 4.5]} intensity={1.95} color="#d9ffd0" castShadow />
+      <directionalLight position={[-4.5, 2.4, -3.8]} intensity={0.95} color="#96ff7f" />
+      <directionalLight position={[0, 1.5, 4]} intensity={0.5} color="#ffffff" />
+      <pointLight position={[0, 0.8, 2.6]} intensity={1.25} color="#9dff88" distance={10} />
+      <pointLight position={[0, -0.7, 1.2]} intensity={0.85} color="#45ff2e" distance={6} />
 
       <GLBModel
         key={outfit.file}
@@ -156,8 +327,8 @@ function OutfitScene({ outfit, rotationY, onStatusChange }) {
         onStatusChange={onStatusChange}
       />
 
-      <ContactShadows position={[0, -1.32, 0]} opacity={0.34} scale={4.8} blur={2.9} far={2.7} />
-      <Environment preset="city" />
+      <ContactShadows position={[0, -1.32, 0]} opacity={0.34} scale={4.8} blur={2.9} far={2.7} color="#4cff38" />
+      <Environment preset="night" />
     </Canvas>
   );
 }
@@ -302,9 +473,9 @@ export default function OutfitSelect() {
   return (
     <main className="outfitPage">
       <section className="selectorShell">
-        <div className="sparkleGrid" />
-        <div className="glowBlob glowOne" />
-        <div className="glowBlob glowTwo" />
+        <BackgroundMedia />
+        <BackgroundFX />
+        <div className="screenShade" />
 
         <header className="topHud">
           <p className="eyebrow">GLB Outfit Select</p>
