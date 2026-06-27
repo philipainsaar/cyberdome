@@ -1,10 +1,25 @@
-# Three.js + Next.js GLB Outfit Select
+# Three Outfit Select (GLB only)
 
-This version is **GLB only**. It does not use placeholder 3D characters, OBJ, FBX, GLTF folders, or procedural outfit models.
+A Next.js + Three.js outfit selection screen that loads only `.glb` models from `public/outfits/`.
 
-## Add outfits
+## Features
 
-Put your `.glb` files here:
+- GLB-only outfit carousel
+- Drag to rotate outfit
+- Long swipe left/right to move between outfits
+- Mobile-safe layout
+- Auto-scan of `public/outfits/`
+- Black cyber game-menu background
+- Dense neon green Three.js sparkle particles
+- Slow glowing particle drift
+- Neon floor grid in the background scene
+- Scanline and laser-sweep UI overlay
+- Stronger green glow on cards, buttons, and HUD
+- Optional autoplay background video or fallback JPG image
+
+## Outfit folder
+
+Put your models here:
 
 ```txt
 public/outfits/
@@ -19,24 +34,20 @@ public/outfits/cyber-kawaii.glb
 public/outfits/pastel-mecha.glb
 ```
 
-The website scans that folder through:
+## Optional background media
+
+You can also add either of these files:
 
 ```txt
-app/api/outfits/route.js
+public/backgrounds/background.mp4
+public/backgrounds/background.jpg
 ```
 
-Only files ending in `.glb` are added to the carousel. The names are created from the filenames automatically.
+How it works:
 
-## Controls
-
-```txt
-Drag character area = rotate current GLB
-Long swipe left/right = next or previous GLB
-Bottom cards = jump to GLB
-Arrow buttons = next / previous
-Keyboard arrows = next / previous
-A / D keys = rotate
-```
+- If `background.mp4` exists, it autoplay loops in the background.
+- If the `.mp4` is missing or fails, it falls back to `background.jpg`.
+- If both are missing, it stays black with neon green Three.js sparkle FX.
 
 ## Run
 
@@ -45,14 +56,12 @@ npm install
 npm run dev
 ```
 
-Open:
+## Main files
 
-```txt
-http://localhost:3000
-```
+- `components/OutfitSelect.jsx`
+- `app/globals.css`
+- `app/api/outfits/route.js`
 
-## Notes
+## MP4 background note
 
-- Client-side code cannot list files from `public/outfits` by itself, so this project uses a small Next.js API route to scan the folder.
-- If you add new `.glb` files while the dev server is running, refresh the page.
-- If a GLB loads blank, check that it opens correctly in a GLB viewer and that textures are embedded or correctly packed inside the `.glb`.
+The neon sparkle Three.js canvas is transparent, so `public/backgrounds/background.mp4` can show behind the particles. Keep the filename lowercase unless you update the path in `components/OutfitSelect.jsx`.
